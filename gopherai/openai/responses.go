@@ -116,9 +116,17 @@ func (p *Provider) BuildRequest(input any, instructions string, tools []any) any
 
 	convertedInput := input
 	if inputItems, ok := input.([]any); ok {
-		convertedItems := make([]InputItem, len(inputItems))
-		for i, item := range inputItems {
-			convertedItems[i] = item.(InputItem)
+		convertedItems := make([]InputItem, 0, len(inputItems))
+		for _, item := range inputItems {
+			if inputItem, ok := item.(InputItem); ok {
+				convertedItems = append(convertedItems, inputItem)
+			} else if inputStr, ok := item.(string); ok {
+				convertedItems = append(convertedItems, InputItem{
+					Type:    "message",
+					Role:    "user",
+					Content: inputStr,
+				})
+			}
 		}
 		convertedInput = convertedItems
 	}

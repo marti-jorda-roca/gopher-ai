@@ -53,6 +53,7 @@ func (a *Agent) Run(prompt string) (string, error) {
 		providerTools[i] = a.provider.ConvertTool(tool)
 	}
 
+	var conversationHistory []any
 	var input any = prompt
 	maxIterations := 10
 
@@ -71,6 +72,10 @@ func (a *Agent) Run(prompt string) (string, error) {
 		if len(toolCalls) == 0 {
 			text := a.provider.ExtractText(resp)
 			return text, nil
+		}
+
+		if len(conversationHistory) == 0 {
+			conversationHistory = append(conversationHistory, prompt)
 		}
 
 		var inputItems []any
@@ -92,7 +97,8 @@ func (a *Agent) Run(prompt string) (string, error) {
 			inputItems = append(inputItems, outputItem)
 		}
 
-		input = inputItems
+		conversationHistory = append(conversationHistory, inputItems...)
+		input = conversationHistory
 	}
 
 	return "", fmt.Errorf("max iterations reached")
