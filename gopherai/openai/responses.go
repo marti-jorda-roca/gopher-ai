@@ -2,6 +2,8 @@ package openai
 
 import (
 	"fmt"
+
+	"github.com/marti-jorda-roca/gopher-ai/gopherai"
 )
 
 // CreateResponse sends a request to the OpenAI Responses API.
@@ -62,4 +64,88 @@ func (r *Response) GetToolCalls() []OutputItem {
 		}
 	}
 	return calls
+}
+
+// ConvertTool converts a gopherai.Tool to an OpenAI FunctionTool.
+func (p *Provider) ConvertTool(tool gopherai.Tool) any {
+	strict := true
+	return FunctionTool{
+		Type:        "function",
+		Name:        tool.Name,
+		Description: tool.Description,
+		Parameters:  tool.Parameters,
+		Strict:      &strict,
+	}
+}
+
+// ExtractToolCalls extracts tool calls from a response.
+func (p *Provider) ExtractToolCalls(resp any) ([]gopherai.ToolCall, error) {
+	response, ok := resp.(*Response)
+	if !ok {
+		return nil, fmt.Errorf("invalid response type: expected *Response")
+	}
+
+	var calls []gopherai.ToolCall
+	for _, item := range response.Output {
+		if item.Type == "function_call" {
+			calls = append(calls, gopherai.ToolCall{
+				Name:      item.Name,
+				Arguments: item.Arguments,
+				CallID:    item.CallID,
+			})
+		}
+	}
+	return calls, nil
+}
+
+// ExtractText extracts text content from a response.
+func (p *Provider) ExtractText(resp any) string {
+	response, ok := resp.(*Response)
+	if !ok {
+		return ""
+	}
+	return response.GetOutputText()
+}
+
+// BuildRequest builds a CreateResponseRequest from the given parameters.
+func (p *Provider) BuildRequest(input any, instructions string, tools []any) any {
+	functionTools := make([]FunctionTool, len(tools))
+	for i, tool := range tools {
+		functionTools[i] = tool.(FunctionTool)
+	}
+
+	convertedInput := input
+	if inputItems, ok := input.([]any); ok {
+		convertedItems := make([]InputItem, len(inputItems))
+		for i, item := range inputItems {
+			convertedItems[i] = item.(InputItem)
+		}
+		convertedInput = convertedItems
+	}
+
+	req := &CreateResponseRequest{
+		Model:           p.model,
+		Input:           convertedInput,
+		Instructions:    instructions,
+		Tools:           functionTools,
+		Temperature:     p.temperature,
+		MaxOutputTokens: p.maxTokens,
+	}
+
+	return req
+}
+
+// CreateFunctionCallInput creates a function call input item from a ToolCall.
+func (p *Provider) CreateFunctionCallInput(call gopherai.ToolCall) any {
+	return InputItem{
+		Type:      "function_call",
+		CallID:    call.CallID,
+		Name:      call.Name,
+		Arguments: call.Arguments,
+	}
+}
+
+// CreateFunctionCallOutput creates a function call output item.
+func (p *Provider) CreateFunctionCallOutput(callID, output string) any {
+	return NewFunctionCallOutput(callID, output)
 }
