@@ -11,9 +11,12 @@ const (
 
 // Provider is the OpenAI API provider.
 type Provider struct {
-	apiKey  string
-	baseURL string
-	http    *resty.Client
+	apiKey      string
+	baseURL     string
+	http        *resty.Client
+	model       string
+	temperature *float64
+	maxTokens   *int
 }
 
 // NewProvider creates a new OpenAI API provider with the given API key.
@@ -22,12 +25,31 @@ func NewProvider(apiKey string) *Provider {
 		apiKey:  apiKey,
 		baseURL: defaultBaseURL,
 		http:    resty.New(),
+		model:   "gpt-4.1",
 	}
 
 	p.http.SetBaseURL(p.baseURL)
 	p.http.SetHeader("Authorization", "Bearer "+apiKey)
 	p.http.SetHeader("Content-Type", "application/json")
 
+	return p
+}
+
+// SetModel sets the model to use for requests.
+func (p *Provider) SetModel(model string) *Provider {
+	p.model = model
+	return p
+}
+
+// SetTemperature sets the temperature for requests.
+func (p *Provider) SetTemperature(temperature float64) *Provider {
+	p.temperature = &temperature
+	return p
+}
+
+// SetMaxTokens sets the maximum output tokens for requests.
+func (p *Provider) SetMaxTokens(maxTokens int) *Provider {
+	p.maxTokens = &maxTokens
 	return p
 }
 
