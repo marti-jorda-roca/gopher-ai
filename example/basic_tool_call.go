@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marti-jorda-roca/gopher-ai/gopherai"
+	"github.com/marti-jorda-roca/gopher-ai/gopherai/openai"
 )
 
 func main() {
@@ -16,9 +16,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	client := gopherai.NewClient(apiKey)
+	client := openai.NewProvider(apiKey)
 
-	weatherTool := gopherai.NewFunctionTool(
+	weatherTool := openai.NewFunctionTool(
 		"get_weather",
 		"Get the current weather for a location",
 		map[string]any{
@@ -38,10 +38,10 @@ func main() {
 		},
 	)
 
-	resp, err := client.CreateResponse(&gopherai.CreateResponseRequest{
+	resp, err := client.CreateResponseTyped(&openai.CreateResponseRequest{
 		Model: "gpt-4.1",
 		Input: "What's the weather like in Paris?",
-		Tools: []gopherai.FunctionTool{weatherTool},
+		Tools: []openai.FunctionTool{weatherTool},
 	})
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

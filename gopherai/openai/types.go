@@ -1,4 +1,4 @@
-package gopherai
+package openai
 
 // FunctionTool represents a function tool that can be called by the model.
 type FunctionTool struct {

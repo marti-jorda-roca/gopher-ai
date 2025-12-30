@@ -1,16 +1,21 @@
-package gopherai
+package openai
 
 import (
 	"fmt"
 )
 
 // CreateResponse sends a request to the OpenAI Responses API.
-func (c *Client) CreateResponse(req *CreateResponseRequest) (*Response, error) {
+func (p *Provider) CreateResponse(req any) (any, error) {
+	createReq, ok := req.(*CreateResponseRequest)
+	if !ok {
+		return nil, fmt.Errorf("invalid request type: expected *CreateResponseRequest")
+	}
+
 	var result Response
 	var apiErr APIError
 
-	resp, err := c.http.R().
-		SetBody(req).
+	resp, err := p.http.R().
+		SetBody(createReq).
 		SetResult(&result).
 		SetError(&apiErr).
 		Post("/responses")
@@ -23,6 +28,15 @@ func (c *Client) CreateResponse(req *CreateResponseRequest) (*Response, error) {
 	}
 
 	return &result, nil
+}
+
+// CreateResponseTyped sends a request to the OpenAI Responses API with typed request and response.
+func (p *Provider) CreateResponseTyped(req *CreateResponseRequest) (*Response, error) {
+	resp, err := p.CreateResponse(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.(*Response), nil
 }
 
 // GetOutputText returns the text content from the response output.
