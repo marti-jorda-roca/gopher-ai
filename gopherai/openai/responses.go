@@ -1,13 +1,14 @@
 package openai
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/marti-jorda-roca/gopher-ai/gopherai"
 )
 
 // CreateResponse sends a request to the OpenAI Responses API.
-func (p *Provider) CreateResponse(req any) (any, error) {
+func (p *Provider) CreateResponse(ctx context.Context, req any) (any, error) {
 	createReq, ok := req.(*CreateResponseRequest)
 	if !ok {
 		return nil, fmt.Errorf("invalid request type: expected *CreateResponseRequest")
@@ -17,6 +18,7 @@ func (p *Provider) CreateResponse(req any) (any, error) {
 	var apiErr APIError
 
 	resp, err := p.http.R().
+		SetContext(ctx).
 		SetBody(createReq).
 		SetResult(&result).
 		SetError(&apiErr).
@@ -33,8 +35,8 @@ func (p *Provider) CreateResponse(req any) (any, error) {
 }
 
 // CreateResponseTyped sends a request to the OpenAI Responses API with typed request and response.
-func (p *Provider) CreateResponseTyped(req *CreateResponseRequest) (*Response, error) {
-	resp, err := p.CreateResponse(req)
+func (p *Provider) CreateResponseTyped(ctx context.Context, req *CreateResponseRequest) (*Response, error) {
+	resp, err := p.CreateResponse(ctx, req)
 	if err != nil {
 		return nil, err
 	}

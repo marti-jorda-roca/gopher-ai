@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // CreateResponse sends a request to the Gemini API.
-func (p *Provider) CreateResponse(req any) (any, error) {
+func (p *Provider) CreateResponse(ctx context.Context, req any) (any, error) {
 	generateReq, ok := req.(*GenerateContentRequest)
 	if !ok {
 		return nil, fmt.Errorf("invalid request type: expected *GenerateContentRequest")
@@ -19,6 +20,7 @@ func (p *Provider) CreateResponse(req any) (any, error) {
 
 	endpoint := fmt.Sprintf("/models/%s:generateContent", p.model)
 	resp, err := p.http.R().
+		SetContext(ctx).
 		SetBody(generateReq).
 		SetResult(&result).
 		SetError(&apiErr).

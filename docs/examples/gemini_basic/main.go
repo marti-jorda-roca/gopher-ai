@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,7 +45,7 @@ func main() {
 		gopherai.WithTools(myTool),
 	)
 
-	response, err := myAgent.Run("What's the weather like in Paris?")
+	response, err := myAgent.Run(context.Background(), "What's the weather like in Paris?")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

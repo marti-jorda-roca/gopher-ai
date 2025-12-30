@@ -1,5 +1,7 @@
 package gopherai
 
+import "context"
+
 // ToolCall represents a function call request from the AI.
 type ToolCall struct {
 	Name      string
@@ -15,7 +17,7 @@ type FunctionCallOutput struct {
 
 // Provider defines the interface for AI providers.
 type Provider interface {
-	CreateResponse(req any) (any, error)
+	CreateResponse(ctx context.Context, req any) (any, error)
 	BuildRequest(input any, instructions string, tools []any) any
 	ConvertTool(tool Tool) any
 	ExtractToolCalls(resp any) ([]ToolCall, error)

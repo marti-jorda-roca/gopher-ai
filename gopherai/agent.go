@@ -1,7 +1,10 @@
 package gopherai
 
 import (
+	"context"
 	"fmt"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Agent orchestrates interactions with an AI provider.
@@ -47,7 +50,7 @@ func NewAgent(provider Provider, opts ...AgentOption) *Agent {
 }
 
 // Run executes the agent with the given prompt and returns the final response.
-func (a *Agent) Run(prompt string) (string, error) {
+func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
 	providerTools := make([]any, len(a.tools))
 	for i, tool := range a.tools {
 		providerTools[i] = a.provider.ConvertTool(tool)
@@ -59,7 +62,7 @@ func (a *Agent) Run(prompt string) (string, error) {
 
 	for i := 0; i < maxIterations; i++ {
 		req := a.provider.BuildRequest(input, a.instructions, providerTools)
-		resp, err := a.provider.CreateResponse(req)
+		resp, err := a.provider.CreateResponse(ctx, req)
 		if err != nil {
 			return "", fmt.Errorf("failed to create response: %w", err)
 		}
@@ -78,22 +81,43 @@ func (a *Agent) Run(prompt string) (string, error) {
 			conversationHistory = append(conversationHistory, prompt)
 		}
 
-		var inputItems []any
-		for _, call := range toolCalls {
+		type toolResult struct {
+			call   ToolCall
+			output string
+		}
+
+		results := make([]toolResult, len(toolCalls))
+		g, _ := errgroup.WithContext(ctx)
+
+		for i, call := range toolCalls {
+			call := call
+			i := i
+
 			tool, ok := a.toolMap[call.Name]
 			if !ok {
 				return "", fmt.Errorf("unknown tool: %s", call.Name)
 			}
 
-			callInputItem := a.provider.CreateFunctionCallInput(call)
+			g.Go(func() error {
+				result, err := tool.Handler(call.Arguments)
+				if err != nil {
+					return fmt.Errorf("tool %s failed: %w", call.Name, err)
+				}
+				results[i] = toolResult{call: call, output: result}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return "", err
+		}
+
+		var inputItems []any
+		for _, result := range results {
+			callInputItem := a.provider.CreateFunctionCallInput(result.call)
 			inputItems = append(inputItems, callInputItem)
 
-			result, err := tool.Handler(call.Arguments)
-			if err != nil {
-				return "", fmt.Errorf("tool %s failed: %w", call.Name, err)
-			}
-
-			outputItem := a.provider.CreateFunctionCallOutput(call.CallID, result)
+			outputItem := a.provider.CreateFunctionCallOutput(result.call.CallID, result.output)
 			inputItems = append(inputItems, outputItem)
 		}
 
