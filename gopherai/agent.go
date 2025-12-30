@@ -9,10 +9,11 @@ import (
 
 // Agent orchestrates interactions with an AI provider.
 type Agent struct {
-	provider     Provider
-	tools        []Tool
-	toolMap      map[string]Tool
-	systemPrompt string
+	provider            Provider
+	tools               []Tool
+	toolMap             map[string]Tool
+	systemPrompt        string
+	conversationHistory []any
 }
 
 // AgentOption configures an Agent.
@@ -32,6 +33,13 @@ func WithTools(tools ...Tool) AgentOption {
 		for _, tool := range tools {
 			a.toolMap[tool.Name] = tool
 		}
+	}
+}
+
+// WithConversationHistory sets the initial conversation history for the agent.
+func WithConversationHistory(history []any) AgentOption {
+	return func(a *Agent) {
+		a.conversationHistory = history
 	}
 }
 
@@ -71,6 +79,9 @@ func (a *Agent) Run(ctx context.Context, prompt string, history ...[]any) (*RunR
 	if len(history) > 0 && len(history[0]) > 0 {
 		conversationHistory = make([]any, len(history[0]))
 		copy(conversationHistory, history[0])
+	} else if len(a.conversationHistory) > 0 {
+		conversationHistory = make([]any, len(a.conversationHistory))
+		copy(conversationHistory, a.conversationHistory)
 	}
 
 	conversationHistory = append(conversationHistory, prompt)
