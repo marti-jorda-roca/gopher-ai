@@ -1,0 +1,22 @@
+version: "2"
+
+linters:
+  enable:
+    - staticcheck
+    - govet
+    - unused
+    - revive
+    - gosec
+    - errorlint
+
+formatters:
+  enable:
+    - gofumpt
+
+linters-settings:
+  staticcheck:
+    checks: ["all"]
+
+formatters-settings:
+  gofumpt:
+    extra-rules: true

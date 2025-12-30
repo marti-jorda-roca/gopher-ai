@@ -1,0 +1,10 @@
+---
+description: Go code modifications
+globs: **/*.go
+---
+
+After modifying any Go file, run:
+
+```bash
+golangci-lint run --fix
+```
