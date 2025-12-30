@@ -18,8 +18,7 @@ go build ./gopherai
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
-go build -o bin/example ./example
-go run ./example/basic_tool_call.go
+go run example/basic_tool_call.go
 ```
 
 ## Lint & Format

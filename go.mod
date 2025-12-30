@@ -1,4 +1,4 @@
-module github.com/yourusername/gopher-ai
+module github.com/marti-jorda-roca/gopher-ai
 
 go 1.21
 

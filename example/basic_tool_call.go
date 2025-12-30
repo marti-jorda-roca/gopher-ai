@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourusername/gopher-ai/gopherai"
+	"github.com/marti-jorda-roca/gopher-ai/gopherai"
 )
 
 func main() {
