@@ -9,6 +9,18 @@ import (
 	"github.com/marti-jorda-roca/gopher-ai/gopherai/openai"
 )
 
+func getWeather(location, unit string) string {
+	weatherData := map[string]any{
+		"location":    location,
+		"temperature": 22,
+		"unit":        unit,
+		"conditions":  "partly cloudy",
+		"humidity":    65,
+	}
+	data, _ := json.Marshal(weatherData)
+	return string(data)
+}
+
 func main() {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -52,18 +64,52 @@ func main() {
 	fmt.Printf("Status: %s\n", resp.Status)
 
 	toolCalls := resp.GetToolCalls()
-	if len(toolCalls) > 0 {
-		fmt.Println("\nTool Calls:")
-		for _, call := range toolCalls {
-			fmt.Printf("  - Function: %s\n", call.Name)
-			fmt.Printf("    Arguments: %s\n", call.Arguments)
+	if len(toolCalls) == 0 {
+		if text := resp.GetOutputText(); text != "" {
+			fmt.Printf("\nOutput Text: %s\n", text)
+		}
+		return
+	}
+
+	fmt.Println("\nTool Calls:")
+	var input []openai.InputItem
+	for _, call := range toolCalls {
+		fmt.Printf("  - Function: %s\n", call.Name)
+		fmt.Printf("    Arguments: %s\n", call.Arguments)
+
+		input = append(input, call.ToInputItem())
+
+		if call.Name == "get_weather" {
+			var args struct {
+				Location string `json:"location"`
+				Unit     string `json:"unit"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				fmt.Printf("Error parsing arguments: %v\n", err)
+				os.Exit(1)
+			}
+
+			result := getWeather(args.Location, args.Unit)
+			fmt.Printf("    Result: %s\n", result)
+			input = append(input, openai.NewFunctionCallOutput(call.CallID, result))
 		}
 	}
 
-	if text := resp.GetOutputText(); text != "" {
-		fmt.Printf("\nOutput Text: %s\n", text)
+	finalResp, err := client.CreateResponseTyped(&openai.CreateResponseRequest{
+		Model: "gpt-4.1",
+		Input: input,
+		Tools: []openai.FunctionTool{weatherTool},
+	})
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
 	}
 
-	pretty, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Printf("\nFinal Response ID: %s\n", finalResp.ID)
+	if text := finalResp.GetOutputText(); text != "" {
+		fmt.Printf("Output Text: %s\n", text)
+	}
+
+	pretty, _ := json.MarshalIndent(finalResp, "", "  ")
 	fmt.Printf("\nFull Response:\n%s\n", string(pretty))
 }

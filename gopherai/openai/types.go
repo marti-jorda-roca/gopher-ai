@@ -27,6 +27,36 @@ type InputMessage struct {
 	Content string `json:"content"`
 }
 
+// InputItem represents a generic input item for the conversation.
+type InputItem struct {
+	Type      string `json:"type"`
+	Role      string `json:"role,omitempty"`
+	Content   string `json:"content,omitempty"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Output    string `json:"output,omitempty"`
+}
+
+// NewFunctionCallOutput creates a new function call output item.
+func NewFunctionCallOutput(callID, output string) InputItem {
+	return InputItem{
+		Type:   "function_call_output",
+		CallID: callID,
+		Output: output,
+	}
+}
+
+// ToInputItem converts an OutputItem (function_call) to an InputItem for continuing the conversation.
+func (o *OutputItem) ToInputItem() InputItem {
+	return InputItem{
+		Type:      o.Type,
+		CallID:    o.CallID,
+		Name:      o.Name,
+		Arguments: o.Arguments,
+	}
+}
+
 // CreateResponseRequest represents a request to create a response.
 type CreateResponseRequest struct {
 	Model             string         `json:"model"`
