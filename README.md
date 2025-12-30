@@ -68,6 +68,12 @@ go run ./docs/examples/gemini_basic
 go build ./gopherai/...
 ```
 
+## Test
+
+```bash
+go test ./tests/...
+```
+
 ## Lint & Format
 
 ```bash
