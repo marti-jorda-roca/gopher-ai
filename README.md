@@ -28,8 +28,8 @@ func main() {
 		gopherai.WithSystemPrompt("You are a helpful weather assistant."),
 		gopherai.WithTools(tool),
 	)
-	response, _ := agent.Run("What's the weather like in Paris?")
-	println(response)
+	result, _ := agent.Run("What's the weather like in Paris?")
+	println(result.Text)
 }
 ```
 
