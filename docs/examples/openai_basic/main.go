@@ -41,15 +41,23 @@ func main() {
 	myTool := gopherai.NewTool("get_weather", "Get the current weather for a location", GetWeather)
 
 	myAgent := gopherai.NewAgent(myProvider,
-		gopherai.WithInstructions("You are a helpful weather assistant."),
+		gopherai.WithSystemPrompt("You are a helpful weather assistant."),
 		gopherai.WithTools(myTool),
 	)
 
-	response, err := myAgent.Run(context.Background(), "What's the weather like in Paris?")
+	result, err := myAgent.Run(context.Background(), "What's the weather like in Paris?")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Response: %s\n", response)
+	fmt.Printf("Response: %s\n", result.Text)
+
+	followUp, err := myAgent.Run(context.Background(), "And in London?", result.MessageHistory())
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Follow-up Response: %s\n", followUp.Text)
 }

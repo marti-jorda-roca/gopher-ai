@@ -25,7 +25,7 @@ func main() {
 	provider := openai.NewProvider("your-api-key").SetModel("gpt-4.1")
 	tool := gopherai.NewTool("get_weather", "Get the current weather", GetWeather)
 	agent := gopherai.NewAgent(provider,
-		gopherai.WithInstructions("You are a helpful weather assistant."),
+		gopherai.WithSystemPrompt("You are a helpful weather assistant."),
 		gopherai.WithTools(tool),
 	)
 	response, _ := agent.Run("What's the weather like in Paris?")

@@ -145,7 +145,7 @@ func (p *Provider) ExtractText(resp any) string {
 }
 
 // BuildRequest builds a GenerateContentRequest from the given parameters.
-func (p *Provider) BuildRequest(input any, instructions string, tools []any) any {
+func (p *Provider) BuildRequest(input any, systemPrompt string, tools []any) any {
 	var contents []Content
 
 	if inputStr, ok := input.(string); ok {
@@ -195,10 +195,10 @@ func (p *Provider) BuildRequest(input any, instructions string, tools []any) any
 		},
 	}
 
-	if instructions != "" {
+	if systemPrompt != "" {
 		req.SystemInstruction = &SystemInstruction{
 			Parts: []Part{
-				{Text: instructions},
+				{Text: systemPrompt},
 			},
 		}
 	}
@@ -242,6 +242,16 @@ func (p *Provider) CreateFunctionCallOutput(callID, output string) any {
 					Response: response,
 				},
 			},
+		},
+	}
+}
+
+// CreateAssistantMessage creates an assistant message content.
+func (p *Provider) CreateAssistantMessage(text string) any {
+	return Content{
+		Role: "model",
+		Parts: []Part{
+			{Text: text},
 		},
 	}
 }

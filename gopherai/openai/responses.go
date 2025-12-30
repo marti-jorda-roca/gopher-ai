@@ -110,7 +110,7 @@ func (p *Provider) ExtractText(resp any) string {
 }
 
 // BuildRequest builds a CreateResponseRequest from the given parameters.
-func (p *Provider) BuildRequest(input any, instructions string, tools []any) any {
+func (p *Provider) BuildRequest(input any, systemPrompt string, tools []any) any {
 	functionTools := make([]FunctionTool, len(tools))
 	for i, tool := range tools {
 		functionTools[i] = tool.(FunctionTool)
@@ -136,7 +136,7 @@ func (p *Provider) BuildRequest(input any, instructions string, tools []any) any
 	req := &CreateResponseRequest{
 		Model:           p.model,
 		Input:           convertedInput,
-		Instructions:    instructions,
+		Instructions:    systemPrompt,
 		Tools:           functionTools,
 		Temperature:     p.temperature,
 		MaxOutputTokens: p.maxTokens,
@@ -158,4 +158,13 @@ func (p *Provider) CreateFunctionCallInput(call gopherai.ToolCall) any {
 // CreateFunctionCallOutput creates a function call output item.
 func (p *Provider) CreateFunctionCallOutput(callID, output string) any {
 	return NewFunctionCallOutput(callID, output)
+}
+
+// CreateAssistantMessage creates an assistant message input item.
+func (p *Provider) CreateAssistantMessage(text string) any {
+	return InputItem{
+		Type:    "message",
+		Role:    "assistant",
+		Content: text,
+	}
 }

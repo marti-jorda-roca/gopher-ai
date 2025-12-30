@@ -18,10 +18,11 @@ type FunctionCallOutput struct {
 // Provider defines the interface for AI providers.
 type Provider interface {
 	CreateResponse(ctx context.Context, req any) (any, error)
-	BuildRequest(input any, instructions string, tools []any) any
+	BuildRequest(input any, systemPrompt string, tools []any) any
 	ConvertTool(tool Tool) any
 	ExtractToolCalls(resp any) ([]ToolCall, error)
 	ExtractText(resp any) string
 	CreateFunctionCallInput(call ToolCall) any
 	CreateFunctionCallOutput(callID, output string) any
+	CreateAssistantMessage(text string) any
 }

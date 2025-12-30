@@ -12,16 +12,16 @@ type Agent struct {
 	provider     Provider
 	tools        []Tool
 	toolMap      map[string]Tool
-	instructions string
+	systemPrompt string
 }
 
 // AgentOption configures an Agent.
 type AgentOption func(*Agent)
 
-// WithInstructions sets the system instructions for the agent.
-func WithInstructions(instructions string) AgentOption {
+// WithSystemPrompt sets the system prompt for the agent.
+func WithSystemPrompt(systemPrompt string) AgentOption {
 	return func(a *Agent) {
-		a.instructions = instructions
+		a.systemPrompt = systemPrompt
 	}
 }
 
@@ -49,36 +49,57 @@ func NewAgent(provider Provider, opts ...AgentOption) *Agent {
 	return agent
 }
 
-// Run executes the agent with the given prompt and returns the final response.
-func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
+// RunResult holds the result of an agent run, including the response text and conversation history.
+type RunResult struct {
+	Text    string
+	history []any
+}
+
+// MessageHistory returns the conversation history from this run.
+func (r *RunResult) MessageHistory() []any {
+	return r.history
+}
+
+// Run executes the agent with the given prompt and optional conversation history, returning the final response and updated history.
+func (a *Agent) Run(ctx context.Context, prompt string, history ...[]any) (*RunResult, error) {
 	providerTools := make([]any, len(a.tools))
 	for i, tool := range a.tools {
 		providerTools[i] = a.provider.ConvertTool(tool)
 	}
 
 	var conversationHistory []any
+	if len(history) > 0 && len(history[0]) > 0 {
+		conversationHistory = make([]any, len(history[0]))
+		copy(conversationHistory, history[0])
+	}
+
+	conversationHistory = append(conversationHistory, prompt)
 	var input any = prompt
+	if len(conversationHistory) > 1 {
+		input = conversationHistory
+	}
 	maxIterations := 10
 
 	for i := 0; i < maxIterations; i++ {
-		req := a.provider.BuildRequest(input, a.instructions, providerTools)
+		req := a.provider.BuildRequest(input, a.systemPrompt, providerTools)
 		resp, err := a.provider.CreateResponse(ctx, req)
 		if err != nil {
-			return "", fmt.Errorf("failed to create response: %w", err)
+			return nil, fmt.Errorf("failed to create response: %w", err)
 		}
 
 		toolCalls, err := a.provider.ExtractToolCalls(resp)
 		if err != nil {
-			return "", fmt.Errorf("failed to extract tool calls: %w", err)
+			return nil, fmt.Errorf("failed to extract tool calls: %w", err)
 		}
 
 		if len(toolCalls) == 0 {
 			text := a.provider.ExtractText(resp)
-			return text, nil
-		}
-
-		if len(conversationHistory) == 0 {
-			conversationHistory = append(conversationHistory, prompt)
+			assistantMessage := a.provider.CreateAssistantMessage(text)
+			conversationHistory = append(conversationHistory, assistantMessage)
+			return &RunResult{
+				Text:    text,
+				history: conversationHistory,
+			}, nil
 		}
 
 		type toolResult struct {
@@ -95,7 +116,7 @@ func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
 
 			tool, ok := a.toolMap[call.Name]
 			if !ok {
-				return "", fmt.Errorf("unknown tool: %s", call.Name)
+				return nil, fmt.Errorf("unknown tool: %s", call.Name)
 			}
 
 			g.Go(func() error {
@@ -109,7 +130,7 @@ func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
 		}
 
 		if err := g.Wait(); err != nil {
-			return "", err
+			return nil, err
 		}
 
 		var inputItems []any
@@ -125,5 +146,5 @@ func (a *Agent) Run(ctx context.Context, prompt string) (string, error) {
 		input = conversationHistory
 	}
 
-	return "", fmt.Errorf("max iterations reached")
+	return nil, fmt.Errorf("max iterations reached")
 }
