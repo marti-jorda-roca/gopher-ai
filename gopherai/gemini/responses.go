@@ -321,11 +321,23 @@ func (p *Provider) CreateResponseStream(ctx context.Context, req any) (<-chan go
 	return events, nil
 }
 
-func (p *Provider) parseGeminiStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
-	defer close(events)
-	defer func() { _ = body.Close() }()
+// ParseGeminiStreamForTest exposes stream parsing for testing.
+func ParseGeminiStreamForTest(r io.Reader) <-chan gopherai.StreamEvent {
+	events := make(chan gopherai.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseGeminiStreamReader(r, events)
+	}()
+	return events
+}
 
-	reader := bufio.NewReader(body)
+func (p *Provider) parseGeminiStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
+	defer func() { _ = body.Close() }()
+	parseGeminiStreamReader(body, events)
+}
+
+func parseGeminiStreamReader(r io.Reader, events chan<- gopherai.StreamEvent) {
+	reader := bufio.NewReader(r)
 	var fullText strings.Builder
 
 	for {

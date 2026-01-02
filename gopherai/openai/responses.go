@@ -208,11 +208,23 @@ func (p *Provider) CreateResponseStream(ctx context.Context, req any) (<-chan go
 	return events, nil
 }
 
-func (p *Provider) parseSSEStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
-	defer close(events)
-	defer func() { _ = body.Close() }()
+// ParseSSEStreamForTest exposes stream parsing for testing.
+func ParseSSEStreamForTest(r io.Reader) <-chan gopherai.StreamEvent {
+	events := make(chan gopherai.StreamEvent, 100)
+	go func() {
+		defer close(events)
+		parseSSEStreamReader(r, events)
+	}()
+	return events
+}
 
-	reader := bufio.NewReader(body)
+func (p *Provider) parseSSEStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
+	defer func() { _ = body.Close() }()
+	parseSSEStreamReader(body, events)
+}
+
+func parseSSEStreamReader(r io.Reader, events chan<- gopherai.StreamEvent) {
+	reader := bufio.NewReader(r)
 	var fullText strings.Builder
 	pendingToolCalls := make(map[string]*gopherai.ToolCall)
 

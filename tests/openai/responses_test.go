@@ -1,6 +1,8 @@
 package openai_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/marti-jorda-roca/gopher-ai/gopherai"
@@ -278,5 +280,156 @@ func TestCreateAssistantMessage_CreatesMessageItem(t *testing.T) {
 
 	if inputItem.Content != "Hello!" {
 		t.Errorf("expected content 'Hello!', got '%s'", inputItem.Content)
+	}
+}
+
+func TestCreateResponseStream_ReturnsErrorForInvalidRequestType(t *testing.T) {
+	provider := openai.NewProvider("test-key")
+
+	_, err := provider.CreateResponseStream(context.Background(), "invalid")
+	if err == nil {
+		t.Error("expected error for invalid request type")
+	}
+
+	expectedMsg := "invalid request type: expected *CreateResponseRequest"
+	if err.Error() != expectedMsg {
+		t.Errorf("expected error '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+func TestParseSSEStream_ParsesTextDeltaEvents(t *testing.T) {
+	sseData := `data: {"type":"response.output_text.delta","delta":"Hello"}
+
+data: {"type":"response.output_text.delta","delta":" World"}
+
+data: {"type":"response.output_text.done","text":"Hello World"}
+
+data: {"type":"response.completed"}
+
+data: [DONE]
+`
+	events := openai.ParseSSEStreamForTest(strings.NewReader(sseData))
+
+	var receivedEvents []gopherai.StreamEvent
+	for event := range events {
+		receivedEvents = append(receivedEvents, event)
+	}
+
+	if len(receivedEvents) != 4 {
+		t.Errorf("expected 4 events, got %d", len(receivedEvents))
+	}
+
+	if receivedEvents[0].Type != gopherai.StreamEventTypeTextDelta {
+		t.Errorf("expected first event type TextDelta, got %s", receivedEvents[0].Type)
+	}
+	if receivedEvents[0].Delta != "Hello" {
+		t.Errorf("expected delta 'Hello', got '%s'", receivedEvents[0].Delta)
+	}
+
+	if receivedEvents[1].Type != gopherai.StreamEventTypeTextDelta {
+		t.Errorf("expected second event type TextDelta, got %s", receivedEvents[1].Type)
+	}
+	if receivedEvents[1].Delta != " World" {
+		t.Errorf("expected delta ' World', got '%s'", receivedEvents[1].Delta)
+	}
+
+	if receivedEvents[2].Type != gopherai.StreamEventTypeTextDone {
+		t.Errorf("expected third event type TextDone, got %s", receivedEvents[2].Type)
+	}
+	if receivedEvents[2].Text != "Hello World" {
+		t.Errorf("expected text 'Hello World', got '%s'", receivedEvents[2].Text)
+	}
+
+	if receivedEvents[3].Type != gopherai.StreamEventTypeDone {
+		t.Errorf("expected fourth event type Done, got %s", receivedEvents[3].Type)
+	}
+}
+
+func TestParseSSEStream_ParsesToolCallEvents(t *testing.T) {
+	sseData := `data: {"type":"response.output_item.added","item":{"id":"item_123","type":"function_call","call_id":"call_456","name":"get_weather"}}
+
+data: {"type":"response.function_call_arguments.done","item_id":"item_123","arguments":"{\"location\":\"NYC\"}"}
+
+data: {"type":"response.completed"}
+
+data: [DONE]
+`
+	events := openai.ParseSSEStreamForTest(strings.NewReader(sseData))
+
+	var toolCallEvent *gopherai.StreamEvent
+	for event := range events {
+		if event.Type == gopherai.StreamEventTypeToolCall {
+			toolCallEvent = &event
+		}
+	}
+
+	if toolCallEvent == nil {
+		t.Fatal("expected tool call event")
+	}
+
+	if toolCallEvent.ToolCall == nil {
+		t.Fatal("expected ToolCall to be set")
+	}
+
+	if toolCallEvent.ToolCall.Name != "get_weather" {
+		t.Errorf("expected name 'get_weather', got '%s'", toolCallEvent.ToolCall.Name)
+	}
+
+	if toolCallEvent.ToolCall.CallID != "call_456" {
+		t.Errorf("expected CallID 'call_456', got '%s'", toolCallEvent.ToolCall.CallID)
+	}
+
+	if toolCallEvent.ToolCall.Arguments != `{"location":"NYC"}` {
+		t.Errorf("expected arguments '{\"location\":\"NYC\"}', got '%s'", toolCallEvent.ToolCall.Arguments)
+	}
+}
+
+func TestParseSSEStream_ParsesErrorEvents(t *testing.T) {
+	sseData := `data: {"type":"error","code":"rate_limit","message":"Rate limit exceeded"}
+
+`
+	events := openai.ParseSSEStreamForTest(strings.NewReader(sseData))
+
+	var errorEvent *gopherai.StreamEvent
+	for event := range events {
+		if event.Type == gopherai.StreamEventTypeError {
+			errorEvent = &event
+		}
+	}
+
+	if errorEvent == nil {
+		t.Fatal("expected error event")
+	}
+
+	if errorEvent.Error == nil {
+		t.Fatal("expected Error to be set")
+	}
+
+	expectedErr := "rate_limit: Rate limit exceeded"
+	if errorEvent.Error.Error() != expectedErr {
+		t.Errorf("expected error '%s', got '%s'", expectedErr, errorEvent.Error.Error())
+	}
+}
+
+func TestParseSSEStream_SkipsEmptyAndNonDataLines(t *testing.T) {
+	sseData := `
+event: ping
+
+data: {"type":"response.output_text.delta","delta":"test"}
+
+: this is a comment
+data: {"type":"response.completed"}
+
+data: [DONE]
+`
+	events := openai.ParseSSEStreamForTest(strings.NewReader(sseData))
+
+	var count int
+	for range events {
+		count++
+	}
+
+	if count != 2 {
+		t.Errorf("expected 2 events, got %d", count)
 	}
 }
