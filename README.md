@@ -2,7 +2,7 @@
 
 ![Gopher Army](docs/imgs/gopher-army.svg)
 
-A simple Go Agentic framework for building AI agents.
+A simple Go Agentic framework for building AI agents. For more examples, see the [docs](docs/examples).
 
 ```go
 package main
