@@ -68,6 +68,7 @@ type CreateResponseRequest struct {
 	Temperature       *float64       `json:"temperature,omitempty"`
 	MaxOutputTokens   *int           `json:"max_output_tokens,omitempty"`
 	Store             *bool          `json:"store,omitempty"`
+	Stream            *bool          `json:"stream,omitempty"`
 }
 
 // Response represents the API response from a create response request.
@@ -167,4 +168,41 @@ type APIError struct {
 		Param   string `json:"param"`
 		Code    string `json:"code"`
 	} `json:"error"`
+}
+
+// StreamEventData represents the data payload of a streaming event.
+type StreamEventData struct {
+	Type           string             `json:"type"`
+	SequenceNumber int                `json:"sequence_number"`
+	Response       *Response          `json:"response,omitempty"`
+	OutputIndex    int                `json:"output_index,omitempty"`
+	ItemID         string             `json:"item_id,omitempty"`
+	ContentIndex   int                `json:"content_index,omitempty"`
+	Delta          string             `json:"delta,omitempty"`
+	Text           string             `json:"text,omitempty"`
+	Item           *StreamOutputItem  `json:"item,omitempty"`
+	Part           *StreamContentPart `json:"part,omitempty"`
+	Name           string             `json:"name,omitempty"`
+	Arguments      string             `json:"arguments,omitempty"`
+	Code           string             `json:"code,omitempty"`
+	Message        string             `json:"message,omitempty"`
+}
+
+// StreamOutputItem represents an item in the streaming response output.
+type StreamOutputItem struct {
+	Type      string        `json:"type"`
+	ID        string        `json:"id"`
+	Status    string        `json:"status"`
+	Role      string        `json:"role,omitempty"`
+	Content   []ContentItem `json:"content,omitempty"`
+	Name      string        `json:"name,omitempty"`
+	Arguments string        `json:"arguments,omitempty"`
+	CallID    string        `json:"call_id,omitempty"`
+}
+
+// StreamContentPart represents a content part in the streaming response.
+type StreamContentPart struct {
+	Type        string       `json:"type"`
+	Text        string       `json:"text,omitempty"`
+	Annotations []Annotation `json:"annotations,omitempty"`
 }

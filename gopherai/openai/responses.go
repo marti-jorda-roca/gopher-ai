@@ -1,8 +1,12 @@
 package openai
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/marti-jorda-roca/gopher-ai/gopherai"
 )
@@ -166,5 +170,124 @@ func (p *Provider) CreateAssistantMessage(text string) any {
 		Type:    "message",
 		Role:    "assistant",
 		Content: text,
+	}
+}
+
+// CreateResponseStream sends a streaming request to the OpenAI Responses API.
+func (p *Provider) CreateResponseStream(ctx context.Context, req any) (<-chan gopherai.StreamEvent, error) {
+	createReq, ok := req.(*CreateResponseRequest)
+	if !ok {
+		return nil, fmt.Errorf("invalid request type: expected *CreateResponseRequest")
+	}
+
+	stream := true
+	createReq.Stream = &stream
+
+	events := make(chan gopherai.StreamEvent, 100)
+
+	resp, err := p.http.R().
+		SetContext(ctx).
+		SetBody(createReq).
+		SetDoNotParseResponse(true).
+		Post("/responses")
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.IsError() {
+		body := resp.RawBody()
+		defer func() { _ = body.Close() }()
+		bodyBytes, _ := io.ReadAll(body)
+		close(events)
+		return nil, fmt.Errorf("API error: %s", string(bodyBytes))
+	}
+
+	go p.parseSSEStream(resp.RawBody(), events)
+
+	return events, nil
+}
+
+func (p *Provider) parseSSEStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
+	defer close(events)
+	defer func() { _ = body.Close() }()
+
+	reader := bufio.NewReader(body)
+	var fullText strings.Builder
+	pendingToolCalls := make(map[string]*gopherai.ToolCall)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				events <- gopherai.StreamEvent{
+					Type:  gopherai.StreamEventTypeError,
+					Error: err,
+				}
+			}
+			break
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var eventData StreamEventData
+		if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+			continue
+		}
+
+		switch eventData.Type {
+		case "response.output_text.delta":
+			fullText.WriteString(eventData.Delta)
+			events <- gopherai.StreamEvent{
+				Type:  gopherai.StreamEventTypeTextDelta,
+				Delta: eventData.Delta,
+			}
+
+		case "response.output_text.done":
+			events <- gopherai.StreamEvent{
+				Type: gopherai.StreamEventTypeTextDone,
+				Text: eventData.Text,
+			}
+
+		case "response.output_item.added":
+			if eventData.Item != nil && eventData.Item.Type == "function_call" {
+				pendingToolCalls[eventData.Item.ID] = &gopherai.ToolCall{
+					CallID: eventData.Item.CallID,
+					Name:   eventData.Item.Name,
+				}
+			}
+
+		case "response.function_call_arguments.done":
+			if tc, ok := pendingToolCalls[eventData.ItemID]; ok {
+				tc.Arguments = eventData.Arguments
+				if eventData.Name != "" {
+					tc.Name = eventData.Name
+				}
+				events <- gopherai.StreamEvent{
+					Type:     gopherai.StreamEventTypeToolCall,
+					ToolCall: tc,
+				}
+				delete(pendingToolCalls, eventData.ItemID)
+			}
+
+		case "response.completed":
+			events <- gopherai.StreamEvent{
+				Type: gopherai.StreamEventTypeDone,
+			}
+
+		case "error":
+			events <- gopherai.StreamEvent{
+				Type:  gopherai.StreamEventTypeError,
+				Error: fmt.Errorf("%s: %s", eventData.Code, eventData.Message),
+			}
+		}
 	}
 }

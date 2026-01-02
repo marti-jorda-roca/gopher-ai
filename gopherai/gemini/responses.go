@@ -1,9 +1,12 @@
 package gemini
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/marti-jorda-roca/gopher-ai/gopherai"
 )
@@ -283,4 +286,110 @@ func (p *Provider) fixFunctionResponseNames(contents []Content) []Content {
 	}
 
 	return result
+}
+
+// CreateResponseStream sends a streaming request to the Gemini API.
+func (p *Provider) CreateResponseStream(ctx context.Context, req any) (<-chan gopherai.StreamEvent, error) {
+	generateReq, ok := req.(*GenerateContentRequest)
+	if !ok {
+		return nil, fmt.Errorf("invalid request type: expected *GenerateContentRequest")
+	}
+
+	events := make(chan gopherai.StreamEvent, 100)
+
+	endpoint := fmt.Sprintf("/models/%s:streamGenerateContent?alt=sse", p.model)
+	resp, err := p.http.R().
+		SetContext(ctx).
+		SetBody(generateReq).
+		SetDoNotParseResponse(true).
+		Post(endpoint)
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.IsError() {
+		body := resp.RawBody()
+		defer func() { _ = body.Close() }()
+		bodyBytes, _ := io.ReadAll(body)
+		close(events)
+		return nil, fmt.Errorf("API error: %s", string(bodyBytes))
+	}
+
+	go p.parseGeminiStream(resp.RawBody(), events)
+
+	return events, nil
+}
+
+func (p *Provider) parseGeminiStream(body io.ReadCloser, events chan<- gopherai.StreamEvent) {
+	defer close(events)
+	defer func() { _ = body.Close() }()
+
+	reader := bufio.NewReader(body)
+	var fullText strings.Builder
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				events <- gopherai.StreamEvent{
+					Type:  gopherai.StreamEventTypeError,
+					Error: err,
+				}
+			}
+			break
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		var response GenerateContentResponse
+		if err := json.Unmarshal([]byte(data), &response); err != nil {
+			continue
+		}
+
+		for _, candidate := range response.Candidates {
+			for _, part := range candidate.Content.Parts {
+				if part.Text != "" {
+					fullText.WriteString(part.Text)
+					events <- gopherai.StreamEvent{
+						Type:  gopherai.StreamEventTypeTextDelta,
+						Delta: part.Text,
+					}
+				}
+
+				if part.FunctionCall != nil {
+					argsJSON, err := json.Marshal(part.FunctionCall.Args)
+					if err != nil {
+						continue
+					}
+					events <- gopherai.StreamEvent{
+						Type: gopherai.StreamEventTypeToolCall,
+						ToolCall: &gopherai.ToolCall{
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argsJSON),
+							CallID:    part.FunctionCall.Name,
+						},
+					}
+				}
+			}
+
+			if candidate.FinishReason == "STOP" {
+				if fullText.Len() > 0 {
+					events <- gopherai.StreamEvent{
+						Type: gopherai.StreamEventTypeTextDone,
+						Text: fullText.String(),
+					}
+				}
+				events <- gopherai.StreamEvent{
+					Type: gopherai.StreamEventTypeDone,
+				}
+				return
+			}
+		}
+	}
 }

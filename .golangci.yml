@@ -12,6 +12,8 @@ linters:
 formatters:
   enable:
     - gofumpt
+    - gofmt
+    - goimports
 
 linters-settings:
   staticcheck:

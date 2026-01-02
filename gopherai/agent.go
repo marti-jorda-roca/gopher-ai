@@ -159,3 +159,153 @@ func (a *Agent) Run(ctx context.Context, prompt string, history ...[]any) (*RunR
 
 	return nil, fmt.Errorf("max iterations reached")
 }
+
+// RunStream executes the agent with streaming output, returning a channel of StreamEvents.
+func (a *Agent) RunStream(ctx context.Context, prompt string, history ...[]any) (<-chan StreamEvent, error) {
+	streamProvider, ok := a.provider.(StreamProvider)
+	if !ok {
+		return nil, fmt.Errorf("provider does not support streaming")
+	}
+
+	providerTools := make([]any, len(a.tools))
+	for i, tool := range a.tools {
+		providerTools[i] = a.provider.ConvertTool(tool)
+	}
+
+	var conversationHistory []any
+	if len(history) > 0 && len(history[0]) > 0 {
+		conversationHistory = make([]any, len(history[0]))
+		copy(conversationHistory, history[0])
+	} else if len(a.conversationHistory) > 0 {
+		conversationHistory = make([]any, len(a.conversationHistory))
+		copy(conversationHistory, a.conversationHistory)
+	}
+
+	conversationHistory = append(conversationHistory, prompt)
+	var input any = prompt
+	if len(conversationHistory) > 1 {
+		input = conversationHistory
+	}
+
+	outEvents := make(chan StreamEvent, 100)
+
+	go a.runStreamLoop(ctx, streamProvider, input, conversationHistory, providerTools, outEvents)
+
+	return outEvents, nil
+}
+
+func (a *Agent) runStreamLoop(
+	ctx context.Context,
+	streamProvider StreamProvider,
+	input any,
+	conversationHistory []any,
+	providerTools []any,
+	outEvents chan<- StreamEvent,
+) {
+	defer close(outEvents)
+
+	maxIterations := 10
+	for i := 0; i < maxIterations; i++ {
+		req := a.provider.BuildRequest(input, a.systemPrompt, providerTools)
+		events, err := streamProvider.CreateResponseStream(ctx, req)
+		if err != nil {
+			outEvents <- StreamEvent{
+				Type:  StreamEventTypeError,
+				Error: fmt.Errorf("failed to create response stream: %w", err),
+			}
+			return
+		}
+
+		var toolCalls []ToolCall
+		var fullText string
+
+		for event := range events {
+			switch event.Type {
+			case StreamEventTypeTextDelta:
+				outEvents <- event
+
+			case StreamEventTypeTextDone:
+				fullText = event.Text
+				outEvents <- event
+
+			case StreamEventTypeToolCall:
+				if event.ToolCall != nil {
+					toolCalls = append(toolCalls, *event.ToolCall)
+					outEvents <- event
+				}
+
+			case StreamEventTypeError:
+				outEvents <- event
+				return
+
+			case StreamEventTypeDone:
+			}
+		}
+
+		if len(toolCalls) == 0 {
+			outEvents <- StreamEvent{Type: StreamEventTypeDone}
+			return
+		}
+
+		type toolResult struct {
+			call   ToolCall
+			output string
+		}
+
+		results := make([]toolResult, len(toolCalls))
+		g, _ := errgroup.WithContext(ctx)
+
+		for i, call := range toolCalls {
+			call := call
+			i := i
+
+			tool, ok := a.toolMap[call.Name]
+			if !ok {
+				outEvents <- StreamEvent{
+					Type:  StreamEventTypeError,
+					Error: fmt.Errorf("unknown tool: %s", call.Name),
+				}
+				return
+			}
+
+			g.Go(func() error {
+				result, err := tool.Handler(call.Arguments)
+				if err != nil {
+					return fmt.Errorf("tool %s failed: %w", call.Name, err)
+				}
+				results[i] = toolResult{call: call, output: result}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			outEvents <- StreamEvent{
+				Type:  StreamEventTypeError,
+				Error: err,
+			}
+			return
+		}
+
+		var inputItems []any
+		for _, result := range results {
+			callInputItem := a.provider.CreateFunctionCallInput(result.call)
+			inputItems = append(inputItems, callInputItem)
+
+			outputItem := a.provider.CreateFunctionCallOutput(result.call.CallID, result.output)
+			inputItems = append(inputItems, outputItem)
+		}
+
+		if fullText != "" {
+			assistantMessage := a.provider.CreateAssistantMessage(fullText)
+			conversationHistory = append(conversationHistory, assistantMessage)
+		}
+
+		conversationHistory = append(conversationHistory, inputItems...)
+		input = conversationHistory
+	}
+
+	outEvents <- StreamEvent{
+		Type:  StreamEventTypeError,
+		Error: fmt.Errorf("max iterations reached"),
+	}
+}
