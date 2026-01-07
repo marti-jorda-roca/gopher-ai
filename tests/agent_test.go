@@ -480,3 +480,182 @@ func (m *mockStreamProviderWithToolCalls) CreateResponseStream(_ context.Context
 
 	return ch, nil
 }
+
+func TestAgent_AsTool_CreatesToolWithCorrectNameAndDescription(t *testing.T) {
+	provider := &mockProvider{text: "subagent response"}
+	subagent := gopherai.NewAgent(provider)
+
+	tool := subagent.AsTool("my_subagent", "A helpful subagent")
+
+	if tool.Name != "my_subagent" {
+		t.Errorf("expected tool name 'my_subagent', got '%s'", tool.Name)
+	}
+	if tool.Description != "A helpful subagent" {
+		t.Errorf("expected tool description 'A helpful subagent', got '%s'", tool.Description)
+	}
+}
+
+func TestAgent_AsTool_HandlerExecutesSubagent(t *testing.T) {
+	provider := &mockProvider{text: "subagent response"}
+	subagent := gopherai.NewAgent(provider)
+
+	tool := subagent.AsTool("my_subagent", "A helpful subagent")
+
+	result, err := tool.Handler(`{"task":"test task"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result != "subagent response" {
+		t.Errorf("expected 'subagent response', got '%s'", result)
+	}
+}
+
+func TestAgent_AsTool_PropagatesErrors(t *testing.T) {
+	provider := &mockProviderWithError{err: errors.New("subagent error")}
+	subagent := gopherai.NewAgent(provider)
+
+	tool := subagent.AsTool("my_subagent", "A helpful subagent")
+
+	_, err := tool.Handler(`{"task":"test task"}`)
+	if err == nil {
+		t.Fatal("expected error from subagent")
+	}
+}
+
+func TestAgent_AsTool_HasCorrectParameterSchema(t *testing.T) {
+	provider := &mockProvider{text: "response"}
+	subagent := gopherai.NewAgent(provider)
+
+	tool := subagent.AsTool("my_subagent", "A helpful subagent")
+
+	if tool.Parameters == nil {
+		t.Fatal("expected parameters to be set")
+	}
+
+	props, ok := tool.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected properties in schema")
+	}
+
+	taskProp, ok := props["task"].(map[string]any)
+	if !ok {
+		t.Fatal("expected 'task' property in schema")
+	}
+
+	if taskProp["type"] != "string" {
+		t.Errorf("expected task type 'string', got '%v'", taskProp["type"])
+	}
+}
+
+func TestAgent_AsTool_CanBeUsedByParentAgent(t *testing.T) {
+	subagentProvider := &mockProvider{text: "subagent result"}
+	subagent := gopherai.NewAgent(subagentProvider)
+
+	callCount := 0
+	parentProvider := &mockProviderWithSubagentCall{
+		subagentToolName: "researcher",
+		callCount:        &callCount,
+		finalResponse:    "Final answer using subagent result",
+	}
+
+	parentAgent := gopherai.NewAgent(parentProvider,
+		gopherai.WithTools(subagent.AsTool("researcher", "Researches topics")),
+	)
+
+	result, err := parentAgent.Run(context.Background(), "research something")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Text != "Final answer using subagent result" {
+		t.Errorf("expected 'Final answer using subagent result', got '%s'", result.Text)
+	}
+}
+
+type mockProviderWithError struct {
+	err error
+}
+
+func (m *mockProviderWithError) CreateResponse(_ context.Context, _ any) (any, error) {
+	return nil, m.err
+}
+
+func (m *mockProviderWithError) BuildRequest(_ any, _ string, _ []any) any {
+	return &mockRequest{}
+}
+
+func (m *mockProviderWithError) ConvertTool(tool gopherai.Tool) any {
+	return tool
+}
+
+func (m *mockProviderWithError) ExtractToolCalls(_ any) ([]gopherai.ToolCall, error) {
+	return nil, nil
+}
+
+func (m *mockProviderWithError) ExtractText(_ any) string {
+	return ""
+}
+
+func (m *mockProviderWithError) CreateFunctionCallInput(call gopherai.ToolCall) any {
+	return call
+}
+
+func (m *mockProviderWithError) CreateFunctionCallOutput(callID, output string) any {
+	return gopherai.FunctionCallOutput{CallID: callID, Output: output}
+}
+
+func (m *mockProviderWithError) CreateAssistantMessage(text string) any {
+	return text
+}
+
+type mockProviderWithSubagentCall struct {
+	subagentToolName string
+	callCount        *int
+	finalResponse    string
+}
+
+func (m *mockProviderWithSubagentCall) CreateResponse(_ context.Context, _ any) (any, error) {
+	return &mockResponse{text: m.finalResponse}, nil
+}
+
+func (m *mockProviderWithSubagentCall) BuildRequest(_ any, _ string, _ []any) any {
+	return &mockRequest{}
+}
+
+func (m *mockProviderWithSubagentCall) ConvertTool(tool gopherai.Tool) any {
+	return tool
+}
+
+func (m *mockProviderWithSubagentCall) ExtractToolCalls(_ any) ([]gopherai.ToolCall, error) {
+	if *m.callCount == 0 {
+		*m.callCount++
+		return []gopherai.ToolCall{
+			{
+				Name:      m.subagentToolName,
+				Arguments: `{"task":"research this topic"}`,
+				CallID:    "call_subagent_1",
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+func (m *mockProviderWithSubagentCall) ExtractText(resp any) string {
+	if mockResp, ok := resp.(*mockResponse); ok {
+		return mockResp.text
+	}
+	return ""
+}
+
+func (m *mockProviderWithSubagentCall) CreateFunctionCallInput(call gopherai.ToolCall) any {
+	return call
+}
+
+func (m *mockProviderWithSubagentCall) CreateFunctionCallOutput(callID, output string) any {
+	return gopherai.FunctionCallOutput{CallID: callID, Output: output}
+}
+
+func (m *mockProviderWithSubagentCall) CreateAssistantMessage(text string) any {
+	return text
+}

@@ -57,6 +57,21 @@ func NewAgent(provider Provider, opts ...AgentOption) *Agent {
 	return agent
 }
 
+type subAgentInput struct {
+	Task string `json:"task" description:"The task or prompt to send to this agent"`
+}
+
+// AsTool converts the agent into a Tool that can be used by another agent.
+func (a *Agent) AsTool(name, description string) Tool {
+	return NewTool(name, description, func(input subAgentInput) (string, error) {
+		result, err := a.Run(context.Background(), input.Task)
+		if err != nil {
+			return "", err
+		}
+		return result.Text, nil
+	})
+}
+
 // RunResult holds the result of an agent run, including the response text and conversation history.
 type RunResult struct {
 	Text    string

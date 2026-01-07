@@ -87,4 +87,3 @@ func main() {
 		fmt.Printf("Query: %s\nResponse: %s\n\n", res.Query, res.Response)
 	}
 }
-
